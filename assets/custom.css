@@ -1,0 +1,115 @@
+/* ===== DASH DROPDOWN DARK THEME ===== */
+
+/* Conteneur principal */
+body .Select-control,
+body .Select.is-open .Select-control,
+body .Select.is-focused .Select-control {
+    background-color: #1e2130 !important;
+    border: 1px solid #555 !important;
+    border-radius: 4px !important;
+    color: white !important;
+    box-shadow: none !important;
+}
+
+/* Valeur sélectionnée */
+body .Select-value-label,
+body .Select-single-value {
+    color: white !important;
+}
+
+/* Placeholder */
+body .Select-placeholder {
+    color: #777 !important;
+}
+
+/* Champ de saisie */
+body .Select-input > input,
+body .Select .Select-input > input {
+    color: white !important;
+    background: transparent !important;
+}
+
+/* Menu déroulant */
+body .Select-menu-outer {
+    background-color: #1e2130 !important;
+    border: 1px solid #555 !important;
+    border-top: none !important;
+    z-index: 99999 !important;
+}
+
+body .Select-menu {
+    background-color: #1e2130 !important;
+}
+
+/* Options */
+body .Select-option {
+    background-color: #1e2130 !important;
+    color: #ccc !important;
+    cursor: pointer !important;
+}
+
+body .Select-option.is-focused,
+body .Select-option:hover {
+    background-color: #2d3250 !important;
+    color: white !important;
+}
+
+body .Select-option.is-selected {
+    background-color: rgba(0, 188, 140, 0.15) !important;
+    color: #00bc8c !important;
+}
+
+body .Select-option.is-disabled {
+    color: #555 !important;
+}
+
+/* No results */
+body .Select-noresults {
+    background-color: #1e2130 !important;
+    color: #777 !important;
+}
+
+/* Flèche */
+body .Select-arrow {
+    border-top-color: #888 !important;
+}
+body .Select.is-open .Select-arrow {
+    border-bottom-color: #888 !important;
+}
+
+/* VirtualizedSelect (pour les longues listes) */
+body .VirtualizedSelectOption {
+    background-color: #1e2130 !important;
+    color: #ccc !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+body .VirtualizedSelectFocusedOption {
+    background-color: #2d3250 !important;
+    color: white !important;
+}
+
+body .VirtualizedSelectSelectedOption {
+    background-color: rgba(0, 188, 140, 0.15) !important;
+    color: #00bc8c !important;
+}
+
+body .VirtualizedSelectDisabledOption {
+    color: #555 !important;
+}
+
+/* Clear button (x) */
+body .Select-clear {
+    color: #888 !important;
+}
+body .Select-clear:hover {
+    color: white !important;
+}
+
+/* Multi select tags */
+body .Select-multi-value-wrapper .Select-value {
+    background-color: rgba(0, 188, 140, 0.2) !important;
+    border-color: #00bc8c !important;
+    color: #00bc8c !important;
+}
