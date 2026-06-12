@@ -3,18 +3,24 @@ import pandas as pd
 import numpy as np
 from scipy import stats
 
-# ─── Cache des données ────────────────────────────────────────────────────────
-_data_cache = {}
+# ─── Cache des données (LRU borné pour éviter de saturer la mémoire) ─────────
+from collections import OrderedDict
+
+_data_cache = OrderedDict()
+_CACHE_MAX_ENTRIES = 20
 
 def download_data(tickers, start, end):
     key = (tuple(sorted(tickers)), start, end)
     if key in _data_cache:
+        _data_cache.move_to_end(key)
         return _data_cache[key]
     data = yf.download(tickers, start=start, end=end, auto_adjust=True, progress=False)['Close']
     if isinstance(data, pd.Series):
         data = data.to_frame(name=tickers[0])
     data = data.dropna()
     _data_cache[key] = data
+    while len(_data_cache) > _CACHE_MAX_ENTRIES:
+        _data_cache.popitem(last=False)
     return data
 
 

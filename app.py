@@ -13,6 +13,11 @@ import metrics as m
 from database import get_stock_options, get_last_update, get_stock_count
 import json
 import base64
+import os
+import threading
+import time
+import flask
+from urllib.parse import parse_qs, urlencode
 
 # Chargement au démarrage (mise à jour si > 7 jours)
 STOCK_OPTIONS = get_stock_options()
@@ -42,6 +47,24 @@ print(f"Taux sans risque actuel (T-bill 3M) : {CURRENT_RF:.2f}%")
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.DARKLY], suppress_callback_exceptions=True)
 app.title = "Portfolio Analyzer"
 server = app.server  # Exposé pour gunicorn
+
+# ─── Anti-endormissement (plan gratuit Render) ────────────────────────────────
+# Render fournit RENDER_EXTERNAL_URL en production ; on s'auto-ping toutes les
+# 10 min pour que le service ne soit jamais suspendu pour inactivité.
+KEEPALIVE_URL = os.environ.get("RENDER_EXTERNAL_URL")
+if KEEPALIVE_URL:
+    import requests as _requests
+
+    def _keep_alive():
+        while True:
+            time.sleep(600)
+            try:
+                _requests.get(KEEPALIVE_URL, timeout=30)
+            except Exception:
+                pass
+
+    threading.Thread(target=_keep_alive, daemon=True).start()
+    print(f"Keep-alive actif : ping de {KEEPALIVE_URL} toutes les 10 min")
 
 # Injecté APRÈS tous les CSS pour avoir la priorité absolue
 app.index_string = '''<!DOCTYPE html>
@@ -169,7 +192,7 @@ SELECT_STYLE_VISIBLE = {
 }
 
 def _ticker_row(idx, ticker="", weight=10):
-    display_name = STOCK_MAP.get(ticker, "") if ticker else ""
+    display_name = STOCK_MAP.get(ticker, ticker) if ticker else ""
     return dbc.Row([
         dbc.Col([
             html.Div([
@@ -254,10 +277,23 @@ app.layout = dbc.Container([
                     accept=".json",
                     style={"display": "inline-block"},
                 ),
-                dbc.Button("🖨 Exporter PDF", id='pdf-btn', color="secondary", outline=True, size="sm"),
+                dbc.Button("🖨 Exporter PDF", id='pdf-btn', color="secondary", outline=True, size="sm", className="me-2"),
+                dbc.Button("🔗 Partager", id='share-btn', color="info", outline=True, size="sm"),
             ], className="d-flex align-items-center justify-content-end"),
         ], justify="between", align="center")),
         dbc.CardBody([
+
+            dbc.Collapse([
+                dbc.InputGroup([
+                    dbc.Input(id='share-url', readonly=True, style={"fontSize": "12px"}),
+                    dbc.InputGroupText(
+                        dcc.Clipboard(target_id='share-url', title="Copier",
+                                      style={"cursor": "pointer", "color": "white"}),
+                    ),
+                ], size="sm"),
+                html.Small("Lien copié-collable : il recharge ce portefeuille et ses paramètres.",
+                           className="text-muted"),
+            ], id='share-collapse', is_open=False, className="mb-3"),
 
             # Ticker table
             dbc.Row([
@@ -355,6 +391,7 @@ app.layout = dbc.Container([
         ])
     ], className="mb-4", style={"background": BG_CARD, "border": "1px solid #333"}),
 
+    dcc.Location(id='url', refresh=False),
     dcc.Store(id='n-rows', data=len(DEFAULT_ROWS)),
     dcc.Store(id='export-store'),
     dcc.Download(id='download-csv'),
@@ -569,6 +606,10 @@ def manage_rows(add_clicks, remove_clicks, current_rows, n):
     ctx = dash.callback_context
     if not ctx.triggered:
         return current_rows, n
+    # Un re-rendu des lignes (chargement config/URL) redéclenche ce callback
+    # avec n_clicks=None : ce n'est pas un vrai clic, on ignore.
+    if not ctx.triggered[0]['value']:
+        raise dash.exceptions.PreventUpdate
     trigger = ctx.triggered[0]['prop_id']
     if 'add-ticker-btn' in trigger:
         current_rows.append(_ticker_row(n))
@@ -1407,6 +1448,110 @@ app.clientside_callback(
     Input('pdf-btn', 'n_clicks'),
     prevent_initial_call=True,
 )
+
+
+@app.callback(
+    Output('share-url', 'value'),
+    Output('share-collapse', 'is_open'),
+    Input('share-btn', 'n_clicks'),
+    State('share-collapse', 'is_open'),
+    State({"type": "ticker", "index": dash.ALL}, 'value'),
+    State({"type": "weight", "index": dash.ALL}, 'value'),
+    State('start-month', 'value'),
+    State('start-year', 'value'),
+    State('end-month', 'value'),
+    State('end-year', 'value'),
+    State('benchmark-select', 'value'),
+    State('rf-input', 'value'),
+    State('capital-input', 'value'),
+    prevent_initial_call=True,
+)
+def build_share_link(n_clicks, is_open, tickers, weights, start_month, start_year,
+                     end_month, end_year, benchmark, rf, capital):
+    if is_open:  # second clic : on referme
+        return dash.no_update, False
+    assets = ",".join(
+        f"{t}:{float(w):g}"
+        for t, w in zip(tickers, weights)
+        if t and w is not None
+    )
+    if not assets:
+        return "Ajoutez d'abord des actifs au portefeuille.", True
+    params = {
+        "p": assets,
+        "bench": benchmark or "SPY",
+        "start": f"{start_year}-{start_month}",
+        "end": f"{end_year}-{end_month}",
+    }
+    if rf is not None:
+        params["rf"] = rf
+    if capital is not None:
+        params["cap"] = capital
+    base = flask.request.host_url.rstrip("/")
+    if flask.request.headers.get("X-Forwarded-Proto") == "https" and base.startswith("http://"):
+        base = "https://" + base[len("http://"):]
+    return f"{base}/?{urlencode(params)}", True
+
+
+@app.callback(
+    Output('ticker-rows', 'children', allow_duplicate=True),
+    Output('n-rows', 'data', allow_duplicate=True),
+    Output('benchmark-select', 'value'),
+    Output('start-month', 'value'),
+    Output('start-year', 'value'),
+    Output('end-month', 'value'),
+    Output('end-year', 'value'),
+    Output('rf-input', 'value', allow_duplicate=True),
+    Output('capital-input', 'value'),
+    Input('url', 'search'),
+    prevent_initial_call='initial_duplicate',
+)
+def load_from_url(search):
+    if not search or "p=" not in search:
+        raise dash.exceptions.PreventUpdate
+    params = {k: v[0] for k, v in parse_qs(search.lstrip("?")).items()}
+
+    rows = []
+    for part in params.get("p", "").split(","):
+        ticker, _, weight = part.rpartition(":")
+        ticker = ticker.strip().upper()
+        if not ticker:
+            continue
+        try:
+            weight = float(weight)
+        except ValueError:
+            weight = 10
+        rows.append({"ticker": ticker, "weight": weight})
+    if not rows:
+        raise dash.exceptions.PreventUpdate
+    new_rows = [_ticker_row(i, r["ticker"], r["weight"]) for i, r in enumerate(rows)]
+
+    bench = params.get("bench")
+    bench = bench if bench in BENCHMARK_MAP else dash.no_update
+
+    def _parse_period(key):
+        val = params.get(key, "")
+        if len(val) == 7 and val[4] == "-" and val[:4].isdigit() and val[5:].isdigit():
+            year, month = val[:4], val[5:]
+            if 1 <= int(month) <= 12 and 2000 <= int(year) <= current_year:
+                return month, year
+        return dash.no_update, dash.no_update
+
+    start_month, start_year = _parse_period("start")
+    end_month, end_year = _parse_period("end")
+
+    def _parse_num(key, lo, hi):
+        try:
+            val = float(params[key])
+            return val if lo <= val <= hi else dash.no_update
+        except (KeyError, ValueError):
+            return dash.no_update
+
+    rf = _parse_num("rf", 0, 20)
+    capital = _parse_num("cap", 0, 1e12)
+
+    return (new_rows, len(new_rows), bench,
+            start_month, start_year, end_month, end_year, rf, capital)
 
 
 @app.callback(
