@@ -9,7 +9,7 @@ Application web d'analyse de portefeuille boursier et crypto, construite avec [D
 
 ## Utiliser l'application
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/LUCASCOUDY/portfolio-analyzer)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/lucascdy/portfolio-analyzer)
 
 ## Lancer en local
 
